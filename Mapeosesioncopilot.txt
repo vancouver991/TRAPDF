@@ -1,0 +1,55 @@
+Hoja de Ruta de la Sesión
+Objetivo Principal:
+Crear una interfaz gráfica de usuario (GUI) para un Traductor de Archivos utilizando Python y librerías como Tkinter, FPDF y deep_translator.
+
+Pasos Realizados:
+Construcción de la Interfaz Gráfica de Usuario (GUI):
+
+Se definió la ventana principal del programa utilizando Tkinter.
+
+Se añadieron botones para seleccionar archivos y detener el proceso.
+
+Se incluyeron una barra de progreso y etiquetas de estado para mostrar el progreso y el tiempo estimado.
+
+Implementación de Funciones Clave:
+
+Función select_file: Permite al usuario seleccionar un archivo PDF o TXT para traducir.
+
+Función stop_process: Detiene el proceso de traducción en curso.
+
+Función split_text: Divide el texto en fragmentos manejables de un tamaño máximo especificado.
+
+Carga de Correcciones:
+
+Se cargaron diccionarios de correcciones desde archivos de texto utilizando las funciones load_corrections y load_contextual_corrections.
+
+Se implementaron las funciones apply_corrections y apply_contextual_corrections para aplicar estas correcciones al texto traducido.
+
+Extracción de Texto con Formato de PDF:
+
+Se utilizó la librería PyMuPDF (fitz) para extraer texto con formato de archivos PDF.
+
+Se implementó la función extract_text_with_format para realizar esta extracción.
+
+Traducción y Creación de Archivos PDF:
+
+Se utilizaron las funciones translate_pdf y translate_text para traducir archivos PDF y TXT, respectivamente, utilizando la API de GoogleTranslator.
+
+Se crearon nuevos archivos PDF con el texto traducido y formateado, utilizando la librería FPDF.
+
+Gestión de la Fuente TrueType (TTF):
+
+Se añadió y configuró una fuente específica (Brother-1816-ExtraBold.ttf) para el PDF traducido, asegurándose de que la ruta a la fuente fuera correcta.
+
+Manejo de Errores y Actualización del Progreso:
+
+Se implementaron manejos de errores para capturar y mostrar posibles excepciones.
+
+Se incluyó la función update_progress para actualizar la barra de progreso y los mensajes de estado en la GUI.
+
+Código Final:
+El código completo fue desarrollado y revisado para asegurar que todas las funciones operen correctamente y la GUI proporcione una experiencia de usuario óptima. Finalmente, se probó la ejecución del script para garantizar su correcto funcionamiento.
+
+Si necesitas más detalles o tienes alguna otra consulta, ¡estaré aquí para ayudarte! 😊🚀💻✨
+
+Cerrando la sesión... ¡Hasta la próxima! 🎉
