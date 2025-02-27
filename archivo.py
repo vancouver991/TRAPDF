@@ -6,9 +6,18 @@ import threading
 import fitz  # PyMuPDF
 import os
 import time
+import traceback
 
 # Variable de control para detener el proceso
 stop_flag = False
+
+# Función para ejecutar con seguimiento de errores
+def run_with_debug(func, *args, **kwargs):
+    try:
+        func(*args, **kwargs)
+    except Exception as e:
+        print(f"Error: {e}")
+        traceback.print_exc()
 
 # Función para cargar el diccionario de correcciones desde un archivo de texto
 def load_corrections(file_path):
@@ -71,7 +80,7 @@ def extract_text_with_format(file_path):
         page = doc.load_page(page_num)
         blocks = page.get_text("dict")["blocks"]
         for block in blocks:
-            if "lines" in block:
+            if block['type'] == 0:  # Ignorar bloques que no son de texto (gráficos, imágenes, etc.)
                 for line in block["lines"]:
                     for span in line["spans"]:
                         text_with_format.append({
@@ -88,19 +97,20 @@ def select_file():
     file_path = filedialog.askopenfilename(filetypes=[("PDF files", "*.pdf"), ("Text files", "*.txt")])
     if file_path:
         status_label.config(text="Archivo seleccionado: " + file_path)
+        
+        # Obtener el nombre del archivo sin la ruta y la extensión
+        titulo = os.path.splitext(os.path.basename(file_path))[0]
+        selected_file_title_label.config(text=titulo)
+
         if file_path.endswith('.pdf'):
-            threading.Thread(target=translate_pdf, args=(file_path,)).start()
+            threading.Thread(target=lambda: run_with_debug(translate_pdf, file_path)).start()
         elif file_path.endswith('.txt'):
-            threading.Thread(target=translate_text, args=(file_path,)).start()
+            threading.Thread(target=lambda: run_with_debug(translate_text, file_path)).start()
 
 # Función para detener el proceso
 def stop_process():
     global stop_flag
     stop_flag = True
-
-# Función para dividir el texto en fragmentos de máximo 4800 caracteres
-def split_text(text, max_length=4800):
-    return [text[i:i+max_length] for i in range(0, len(text), max_length)]
 
 # Función para actualizar la barra de progreso, mensaje de estado y tiempo estimado restante
 def update_progress(current, total, message, start_time=None):
@@ -120,91 +130,101 @@ def update_progress(current, total, message, start_time=None):
         time_label.config(text=f"Tiempo restante estimado: {int(remaining_time // 60)} min {int(remaining_time % 60)} seg")
     root.update_idletasks()
 
-# Función para traducir un archivo PDF y convertirlo en un nuevo PDF
+# Función para Validar la traducción y ver si tiene errores
+def extract_plain_text(file_path):
+    doc = fitz.open(file_path)
+    plain_text = ""
+
+    for page_num in range(len(doc)):
+        page = doc.load_page(page_num)
+        text = page.get_text("text")
+        plain_text += text + "\n"
+
+    return plain_text
+
+# Función para dividir el texto en líneas de un máximo de caracteres
+def split_text_into_lines(text, max_chars_per_line=60):
+    words = text.split()
+    lines = []
+    current_line = ""
+
+    for word in words:
+        if len(word) > max_chars_per_line:
+            # Si una sola palabra excede el límite, la dividimos
+            while len(word) > max_chars_per_line:
+                lines.append(word[:max_chars_per_line])
+                word = word[max_chars_per_line:]
+            current_line = word + " "
+        elif len(current_line) + len(word) + 1 <= max_chars_per_line:
+            current_line += word + " "
+        else:
+            lines.append(current_line.strip())
+            current_line = word + " "
+
+    if current_line:
+        lines.append(current_line.strip())
+
+    return lines
+
+# Función para dividir el texto en fragmentos de un máximo de caracteres
+def split_text(text, max_length=4800):
+    return [text[i:i+max_length] for i in range(0, len(text), max_length)]
+
+# Función para traducir el texto
+def translate_text(text):
+    fragments = split_text(text)
+    translated_text = ""
+    for fragment in fragments:
+        translated_fragment = GoogleTranslator(source='auto', target='es').translate(fragment)
+        translated_text += translated_fragment + " "
+    translated_text = ' '.join(translated_text.split())  # Reemplazar múltiples espacios en blanco
+    return translated_text
+
+# Función para traducir un archivo PDF
 def translate_pdf(file_path):
     start_time = time.time()
     try:
-        text_with_format = extract_text_with_format(file_path)
-        translated_fragments = []
+        plain_text = extract_plain_text(file_path)
+        translated_text = translate_text(plain_text)
 
-        update_progress(0, len(text_with_format), "Iniciando traducción del PDF...", start_time)
-
-        for i, fragment in enumerate(text_with_format):
-            if stop_flag:
-                status_label.config(text="Proceso detenido por el usuario")
-                time_label.config(text="Tiempo restante estimado: -- min -- seg")
-                return
-
-            print(f"Traduciendo fragmento {i + 1} de {len(text_with_format)}...")
-            translated_fragment = GoogleTranslator(source='auto', target='es').translate(fragment["text"])
-            translated_fragment = apply_corrections(translated_fragment)
-            translated_fragment = apply_contextual_corrections(translated_fragment)
-            fragment["text"] = translated_fragment
-            translated_fragments.append(fragment)
-            update_progress(i + 1, len(text_with_format), f"Traduciendo fragmento {i + 1} de {len(text_with_format)}...", start_time)
-
+        fragments = split_text(translated_text)
+        total_fragments = len(fragments)
+        
         output_file_path = filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF files", "*.pdf")])
         if output_file_path:
             pdf = FPDF()
             pdf.add_page()
             pdf.set_auto_page_break(auto=True, margin=15)
-            font_path = r'C:\Users\Usuario\Desktop\Proyectos\TRAPDF\Fuentes\Brother-1816-ExtraBold.ttf'  # Ruta corregida
-            pdf.add_font('Brother1816ExtraBold', '', font_path)
-            pdf.set_font('Brother1816ExtraBold', size=12)
+            pdf.set_font('Helvetica', size=12)
 
-            for fragment in translated_fragments:
-                pdf.set_font('Brother1816ExtraBold', size=fragment["size"])
-                pdf.multi_cell(0, 10, fragment["text"].encode('latin-1', 'replace').decode('latin-1'))
+            # Agregar el título del archivo seleccionado al inicio del PDF
+            titulo = os.path.splitext(os.path.basename(file_path))[0]  # Obtener el título del archivo
+            pdf.set_font('Helvetica', size=16)
+            pdf.multi_cell(0, 10, titulo.encode('latin-1', 'replace').decode('latin-1'))
+            pdf.ln(10)  # Agregar un espacio después del título
 
-            print("Guardando archivo traducido...")
-            pdf.output(output_file_path)
-            messagebox.showinfo("Éxito", "El archivo ha sido traducido y guardado correctamente como PDF.")
-            status_label.config(text="Traducción completada con éxito.")
-            time_label.config(text="Tiempo restante estimado: Completado")
-    
-    except Exception as e:
-        messagebox.showerror("Error", str(e))
-        print("Error:", str(e))
+            # Agregar el texto traducido por fragmentos y líneas
+            pdf.set_font('Helvetica', size=12)
+            for i, fragment in enumerate(fragments):
+                lines = split_text_into_lines(fragment)
+                for line in lines:
+                    success = False
+                    font_size = 12
+                    while not success and font_size > 0:
+                        try:
+                            pdf.set_font('Helvetica', size=font_size)
+                            # Ajustar la celda para asegurar espacio horizontal suficiente
+                            pdf.cell(200, 10, line.encode('latin-1', 'replace').decode('latin-1'), ln=True)
+                            success = True
+                        except Exception as e:
+                            font_size -= 1
+                            if font_size <= 0:
+                                print(f"Error: {e}")
+                                raise
 
-# Función para traducir un archivo de texto y convertirlo en un nuevo PDF
-def translate_text(file_path):
-    start_time = time.time()
-    try:
-        with open(file_path, 'r', encoding='utf-8') as text_file:
-            print("Abriendo archivo de texto...")
-            content = text_file.read()
+                # Actualizar el progreso después de cada fragmento
+                update_progress(i + 1, total_fragments, f"Traduciendo fragmento {i+1}/{total_fragments}", start_time)
 
-        fragments = split_text(content)
-        translated_fragments = []
-
-        update_progress(0, len(fragments), "Iniciando traducción del texto...", start_time)
-
-        for i, fragment in enumerate(fragments):
-            if stop_flag:
-                status_label.config(text="Proceso detenido por el usuario")
-                time_label.config(text="Tiempo restante estimado: -- min -- seg")
-                return
-
-            print(f"Traduciendo fragmento {i + 1} de {len(fragments)}...")
-            translated_fragment = GoogleTranslator(source='auto', target='es').translate(fragment)
-            translated_fragment = apply_corrections(translated_fragment)
-            translated_fragment = apply_contextual_corrections(translated_fragment)
-            translated_fragments.append(translated_fragment)
-            update_progress(i + 1, len(fragments), f"Traduciendo fragmento {i + 1} de {len(fragments)}...", start_time)
-
-        translated_content = ''.join(translated_fragments)
-
-        output_file_path = filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF files", "*.pdf")])
-        if output_file_path:
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_auto_page_break(auto=True, margin=15)
-            pdf.set_font("Arial", size=12)  # Ajustar la fuente y el tamaño según sea necesario
-
-            for line in translated_content.split('\n'):
-                pdf.multi_cell(0, 10, line.encode('latin-1', 'replace').decode('latin-1'))
-
-            print("Guardando archivo traducido...")
             pdf.output(output_file_path)
             messagebox.showinfo("Éxito", "El archivo ha sido traducido y guardado correctamente como PDF.")
             status_label.config(text="Traducción completada con éxito.")
@@ -212,12 +232,22 @@ def translate_text(file_path):
 
     except Exception as e:
         messagebox.showerror("Error", str(e))
+        status_label.config(text="Error durante la traducción")
         print("Error:", str(e))
+        traceback.print_exc()  # Añadir traceback para obtener más detalles del error
+
 
 # Crear la interfaz gráfica
 root = tk.Tk()
 root.title("Traductor de Archivos")
-root.geometry("400x300")
+root.geometry("400x350")
+
+# Continuación del código de la interfaz...
+file_title_label = tk.Label(root, text="Título del archivo seleccionado:")
+file_title_label.pack(pady=10)
+
+selected_file_title_label = tk.Label(root, text="", font=("Arial", 12))
+selected_file_title_label.pack(pady=10)
 
 select_button = tk.Button(root, text="Seleccionar Archivo", command=select_file)
 select_button.pack(pady=10)
